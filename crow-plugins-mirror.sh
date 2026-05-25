@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 SOURCE="codefloe.com/crow-plugins"
-TARGET="quay.io/amrkmn/crow-plugins"
+TARGET="quay.io/amrkmn/crow"
 
 IMAGES=(
   ansible
