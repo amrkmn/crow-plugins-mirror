@@ -6,7 +6,7 @@ TARGET="${TARGET:-quay.io/amrkmn/crow}"
 
 IMAGES=(ansible auto-releaser clone docker-buildx renovate sccache)
 
-skopeo_login() {
+regctl_login() {
   local registry="$1" user="$2" pass="$3" required="${4:-false}"
 
   if [[ -z "$user" && -z "$pass" ]]; then
@@ -19,12 +19,34 @@ skopeo_login() {
     exit 1
   fi
 
-  printf '%s\n' "$pass" | skopeo login -u "$user" --password-stdin "$registry"
+  printf '%s\n' "$pass" | regctl registry login "$registry" -u "$user" --pass-stdin
 }
 
-skopeo_login "${SOURCE%%/*}" "${SOURCE_REGISTRY_USERNAME:-}" "${SOURCE_REGISTRY_PASSWORD:-}"
-skopeo_login "${TARGET%%/*}" "${TARGET_REGISTRY_USERNAME:-}" "${TARGET_REGISTRY_PASSWORD:-}" true
+retry() {
+  local attempts="$1"
+  shift
+
+  local attempt
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    if "$@"; then
+      return 0
+    fi
+
+    if ((attempt == attempts)); then
+      return 1
+    fi
+
+    sleep $((attempt * 5))
+  done
+}
+
+regctl_login "${SOURCE%%/*}" "${SOURCE_REGISTRY_USERNAME:-}" "${SOURCE_REGISTRY_PASSWORD:-}"
+regctl_login "${TARGET%%/*}" "${TARGET_REGISTRY_USERNAME:-}" "${TARGET_REGISTRY_PASSWORD:-}" true
 
 for image in "${IMAGES[@]}"; do
-  skopeo sync --all --retry-times 5 --src docker --dest docker "$SOURCE/$image" "$TARGET"
+  mapfile -t tags < <(regctl tag ls "$SOURCE/$image")
+
+  for tag in "${tags[@]}"; do
+    retry 5 regctl image copy "$SOURCE/$image:$tag" "$TARGET/$image:$tag"
+  done
 done
